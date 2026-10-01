@@ -78,7 +78,7 @@ if (!existingDemo) {
 
   console.log(`MongoDB demo account created: ${demoEmail} / ${demoPassword}`);
 }
-
+export default app;
 const server = app.listen(port, '127.0.0.1', () => {
   console.log(`ProblemFinder API RUNNING: http://127.0.0.1:${port}`);
 });
