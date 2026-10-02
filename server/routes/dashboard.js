@@ -10,119 +10,264 @@ import Link from '../models/Link.js';
 import Notification from '../models/Notification.js';
 
 const r = Router();
+
 r.use(auth);
 
 r.get('/', async (req, res) => {
     try {
         const owner = req.user._id;
-        const now = new Date();
 
-        // Counts only: much faster than loading every document from MongoDB.
         const [
-            totalPlans,
-            savedDocuments,
-            totalProjects,
-            activeProjects,
-            completedTasks,
-            pendingTasks,
-            totalIdeas,
-            savedLinks,
+            plans,
+            documents,
+            projects,
+            tasks,
+            ideas,
+            links,
             unreadNotifications,
         ] = await Promise.all([
-            Plan.countDocuments({ owner }),
-            Document.countDocuments({ owner }),
-            Project.countDocuments({ owner }),
-            Project.countDocuments({ owner, status: { $regex: /^active$/i } }),
-            Task.countDocuments({ owner, status: { $regex: /^completed$/i } }),
-            Task.countDocuments({ owner, status: { $not: /^completed$/i } }),
-            Idea.countDocuments({ owner }),
-            Link.countDocuments({ owner }),
-            Notification.countDocuments({ user: owner, read: false }),
-        ]);
-
-        // Only fetch a small number of recent records for the activity feed.
-        const [plans, documents, projects, ideas, links] = await Promise.all([
-            Plan.find({ owner }).select('title createdAt updatedAt').sort({ updatedAt: -1 }).limit(5).lean(),
-            Document.find({ owner }).select('originalName createdAt updatedAt').sort({ updatedAt: -1 }).limit(5).lean(),
-            Project.find({ owner }).select('name title createdAt updatedAt').sort({ updatedAt: -1 }).limit(5).lean(),
-            Idea.find({ owner }).select('title createdAt updatedAt').sort({ updatedAt: -1 }).limit(5).lean(),
-            Link.find({ owner }).select('name url createdAt updatedAt').sort({ updatedAt: -1 }).limit(5).lean(),
-        ]);
-
-        const activity = [
-            ...plans.map((x) => ({ type: 'plan', id: x._id, title: x.title || 'Plan', date: x.updatedAt || x.createdAt })),
-            ...documents.map((x) => ({ type: 'document', id: x._id, title: x.originalName || 'Document', date: x.updatedAt || x.createdAt })),
-            ...projects.map((x) => ({ type: 'project', id: x._id, title: x.name || x.title || 'Project', date: x.updatedAt || x.createdAt })),
-            ...ideas.map((x) => ({ type: 'idea', id: x._id, title: x.title || 'Idea', date: x.updatedAt || x.createdAt })),
-            ...links.map((x) => ({ type: 'link', id: x._id, title: x.name || x.url || 'Link', date: x.updatedAt || x.createdAt })),
-        ]
-            .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
-            .slice(0, 10);
-
-        // Upcoming deadlines only. This avoids loading old records.
-        const [planDeadlines, projectDeadlines, taskDeadlines] = await Promise.all([
-            Plan.find({
-                owner,
-                $or: [
-                    { deadline: { $gte: now } },
-                    { dueDate: { $gte: now } },
-                ],
-            }).select('title deadline dueDate').sort({ deadline: 1, dueDate: 1 }).limit(8).lean(),
-
-            Project.find({ owner, deadline: { $gte: now } })
-                .select('name title deadline')
-                .sort({ deadline: 1 })
-                .limit(8)
+            Plan.find({ owner })
+                .sort({ updatedAt: -1 })
                 .lean(),
 
-            Task.find({
-                owner,
-                deadline: { $gte: now },
-                status: { $not: /^completed$/i },
-            }).select('title deadline status').sort({ deadline: 1 }).limit(8).lean(),
+            Document.find({ owner })
+                .select('-data')
+                .sort({ updatedAt: -1 })
+                .lean(),
+
+            Project.find({ owner })
+                .sort({ updatedAt: -1 })
+                .lean(),
+
+            Task.find({ owner })
+                .sort({ updatedAt: -1 })
+                .lean(),
+
+            Idea.find({ owner })
+                .sort({ updatedAt: -1 })
+                .lean(),
+
+            Link.find({ owner })
+                .sort({ updatedAt: -1 })
+                .lean(),
+
+            Notification.countDocuments({
+                user: owner,
+                read: false,
+            }),
         ]);
 
-        const deadlines = [
-            ...planDeadlines.map((x) => ({
+        // -----------------------------
+        // COUNTS
+        // -----------------------------
+
+        const activeProjects = projects.filter(
+            (project) =>
+                String(project.status || '').toLowerCase() !== 'completed' &&
+                String(project.status || '').toLowerCase() !== 'archived'
+        ).length;
+
+        const completedTasks = tasks.filter(
+            (task) =>
+                String(task.status || '').toLowerCase() === 'completed'
+        ).length;
+
+        const pendingTasks = tasks.filter(
+            (task) =>
+                String(task.status || '').toLowerCase() !== 'completed'
+        ).length;
+
+        const counts = {
+            totalPlans: plans.length,
+
+            activeProjects,
+
+            completedTasks,
+
+            pendingTasks,
+
+            savedDocuments: documents.length,
+
+            totalIdeas: ideas.length,
+
+            savedLinks: links.length,
+
+            unreadNotifications,
+        };
+
+        // -----------------------------
+        // RECENT ACTIVITY
+        // -----------------------------
+
+        const activity = [
+            ...plans.map((item) => ({
                 type: 'plan',
-                id: x._id,
-                title: x.title || 'Plan',
-                deadline: x.deadline || x.dueDate,
+                id: item._id,
+                title: item.title || 'Plan',
+                updatedAt:
+                    item.updatedAt ||
+                    item.createdAt ||
+                    new Date(),
             })),
-            ...projectDeadlines.map((x) => ({
+
+            ...documents.map((item) => ({
+                type: 'document',
+                id: item._id,
+                title:
+                    item.originalName ||
+                    'Document',
+                updatedAt:
+                    item.updatedAt ||
+                    item.createdAt ||
+                    new Date(),
+            })),
+
+            ...projects.map((item) => ({
                 type: 'project',
-                id: x._id,
-                title: x.name || x.title || 'Project',
-                deadline: x.deadline,
+                id: item._id,
+                title:
+                    item.name ||
+                    item.title ||
+                    'Project',
+                updatedAt:
+                    item.updatedAt ||
+                    item.createdAt ||
+                    new Date(),
             })),
-            ...taskDeadlines.map((x) => ({
+
+            ...tasks.map((item) => ({
                 type: 'task',
-                id: x._id,
-                title: x.title || 'Task',
-                deadline: x.deadline,
+                id: item._id,
+                title:
+                    item.title ||
+                    'Task',
+                updatedAt:
+                    item.updatedAt ||
+                    item.createdAt ||
+                    new Date(),
+            })),
+
+            ...ideas.map((item) => ({
+                type: 'idea',
+                id: item._id,
+                title:
+                    item.title ||
+                    'Idea',
+                updatedAt:
+                    item.updatedAt ||
+                    item.createdAt ||
+                    new Date(),
+            })),
+
+            ...links.map((item) => ({
+                type: 'link',
+                id: item._id,
+                title:
+                    item.name ||
+                    item.url ||
+                    'Link',
+                updatedAt:
+                    item.updatedAt ||
+                    item.createdAt ||
+                    new Date(),
             })),
         ]
-            .sort((a, b) => new Date(a.deadline || 0) - new Date(b.deadline || 0))
+            .sort(
+                (a, b) =>
+                    new Date(b.updatedAt || 0) -
+                    new Date(a.updatedAt || 0)
+            )
+            .slice(0, 10);
+
+        // -----------------------------
+        // UPCOMING DEADLINES
+        // -----------------------------
+
+        const deadlines = [
+            ...plans
+                .filter(
+                    (item) =>
+                        item.deadline ||
+                        item.dueDate
+                )
+                .map((item) => ({
+                    type: 'plan',
+                    id: item._id,
+                    title:
+                        item.title ||
+                        'Plan',
+                    deadline:
+                        item.deadline ||
+                        item.dueDate,
+                })),
+
+            ...projects
+                .filter(
+                    (item) =>
+                        item.deadline
+                )
+                .map((item) => ({
+                    type: 'project',
+                    id: item._id,
+                    title:
+                        item.name ||
+                        item.title ||
+                        'Project',
+                    deadline:
+                        item.deadline,
+                })),
+
+            ...tasks
+                .filter(
+                    (item) =>
+                        item.deadline &&
+                        String(
+                            item.status || ''
+                        ).toLowerCase() !==
+                        'completed'
+                )
+                .map((item) => ({
+                    type: 'task',
+                    id: item._id,
+                    title:
+                        item.title ||
+                        'Task',
+                    deadline:
+                        item.deadline,
+                })),
+        ]
+            .sort(
+                (a, b) =>
+                    new Date(a.deadline || 0) -
+                    new Date(b.deadline || 0)
+            )
             .slice(0, 8);
 
+        // -----------------------------
+        // RESPONSE
+        // -----------------------------
+
         res.json({
-            counts: {
-                // Names match Dashboard.jsx exactly.
-                totalPlans,
-                activeProjects,
-                completedTasks,
-                pendingTasks,
-                savedDocuments,
-                totalIdeas,
-                savedLinks,
-                unreadNotifications,
-            },
+            success: true,
+
+            counts,
+
             activity,
+
             deadlines,
         });
+
     } catch (error) {
-        console.error('DASHBOARD ERROR:', error);
-        res.status(500).json({ message: 'Failed to load dashboard' });
+        console.error(
+            'DASHBOARD ERROR:',
+            error
+        );
+
+        res.status(500).json({
+            success: false,
+            message:
+                'Failed to load dashboard',
+        });
     }
 });
 
