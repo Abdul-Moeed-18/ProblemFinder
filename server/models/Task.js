@@ -48,4 +48,7 @@ const taskSchema = new mongoose.Schema(
     }
 );
 
+taskSchema.index({ owner: 1, updatedAt: -1 });
+taskSchema.index({ owner: 1, deadline: 1 });
+
 export default mongoose.model('Task', taskSchema);

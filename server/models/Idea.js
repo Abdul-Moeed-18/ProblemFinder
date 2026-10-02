@@ -36,4 +36,6 @@ const ideaSchema = new mongoose.Schema(
     }
 );
 
+ideaSchema.index({ owner: 1, updatedAt: -1 });
+
 export default mongoose.model('Idea', ideaSchema);

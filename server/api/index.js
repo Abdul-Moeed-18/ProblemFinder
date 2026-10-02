@@ -13,16 +13,16 @@ async function initialize() {
         initializationPromise = (async () => {
             await connectDB();
 
+            // Demo-user seeding is opt-in. Normal production cold starts do not
+            // need an extra read/write before serving the first authenticated request.
+            if (process.env.SEED_DEMO_USER !== 'true') return;
+
             const demoEmail = 'demo@problemfinder.local';
             const demoPassword = 'Demo1234';
-
-            const existingDemo = await User.findOne({
-                email: demoEmail,
-            });
+            const existingDemo = await User.exists({ email: demoEmail });
 
             if (!existingDemo) {
                 const password = await bcrypt.hash(demoPassword, 12);
-
                 await User.create({
                     name: 'Demo User',
                     email: demoEmail,
@@ -30,10 +30,7 @@ async function initialize() {
                     avatar: '',
                     notificationsEnabled: true,
                 });
-
-                console.log(
-                    `MongoDB demo account created: ${demoEmail}`
-                );
+                console.log(`MongoDB demo account created: ${demoEmail}`);
             }
         })();
     }
@@ -43,8 +40,15 @@ async function initialize() {
 
 export default async function handler(req, res) {
     try {
-        await initialize();
+        const path = req.url?.split('?')[0] || '';
 
+        // CORS preflight and health checks do not need MongoDB. Serving them
+        // immediately removes the DB connection wait from browser preflights.
+        if (req.method === 'OPTIONS' || path === '/api/health' || path === '/health') {
+            return app(req, res);
+        }
+
+        await initialize();
         return app(req, res);
     } catch (error) {
         console.error('Vercel API error:', error);
@@ -52,10 +56,7 @@ export default async function handler(req, res) {
         return res.status(500).json({
             ok: false,
             message: 'Server initialization failed',
-            error:
-                process.env.NODE_ENV === 'production'
-                    ? undefined
-                    : error.message,
+            error: process.env.NODE_ENV === 'production' ? undefined : error.message,
         });
     }
 }

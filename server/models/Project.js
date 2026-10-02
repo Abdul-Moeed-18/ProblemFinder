@@ -43,4 +43,7 @@ const projectSchema = new mongoose.Schema(
   }
 );
 
+projectSchema.index({ owner: 1, updatedAt: -1 });
+projectSchema.index({ owner: 1, deadline: 1 });
+
 export default mongoose.model('Project', projectSchema);

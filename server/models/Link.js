@@ -37,4 +37,6 @@ const linkSchema = new mongoose.Schema(
     }
 );
 
+linkSchema.index({ owner: 1, updatedAt: -1 });
+
 export default mongoose.model('Link', linkSchema);
