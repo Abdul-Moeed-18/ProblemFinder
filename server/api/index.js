@@ -2,8 +2,11 @@ import app from '../app.js';
 import { connectDB } from '../config/db.js';
 import bcrypt from 'bcryptjs';
 import User from '../models/User.js';
+import { validateEnv } from '../config/env.js';
 
 let initializationPromise = null;
+
+validateEnv();
 
 async function initialize() {
     if (!initializationPromise) {

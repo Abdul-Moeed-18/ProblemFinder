@@ -3,236 +3,191 @@ import { auth } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
 import Document from '../models/Document.js';
 
-import fs from 'fs';
-import path from 'path';
-
 const r = Router();
 
 r.use(auth);
 
-/* =========================
-   GET ALL DOCUMENTS
-========================= */
-
 r.get('/', async (req, res, next) => {
-    try {
-        let documents = await Document.find({
-            owner: req.user._id,
-        }).sort({
-            updatedAt: -1,
-        });
+  try {
+    const q = String(req.query.q || '').trim();
 
-        const q = String(req.query.q || '')
-            .trim()
-            .toLowerCase();
+    const filter = { owner: req.user._id };
 
-        if (q) {
-            documents = documents.filter((x) =>
-                JSON.stringify(x)
-                    .toLowerCase()
-                    .includes(q)
-            );
-        }
+    if (q) {
+      const safeQ = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(safeQ, 'i');
 
-        res.json(documents);
-    } catch (error) {
-        next(error);
+      filter.$or = [
+        { originalName: regex },
+        { description: regex },
+        { category: regex },
+        { tags: regex },
+      ];
     }
+
+    // `data` is select:false, so listing documents never returns file bytes.
+    const documents = await Document.find(filter)
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    res.json(documents);
+  } catch (error) {
+    next(error);
+  }
 });
 
-/* =========================
-   UPLOAD DOCUMENT
-========================= */
-
-r.post(
-    '/',
-    upload.single('file'),
-    async (req, res, next) => {
-        try {
-            if (!req.file) {
-                return res.status(400).json({
-                    message: 'A supported file is required',
-                });
-            }
-
-            const tags = String(req.body.tags || '')
-                .split(',')
-                .map((s) => s.trim())
-                .filter(Boolean);
-
-            const document = await Document.create({
-                owner: req.user._id,
-                originalName: req.file.originalname,
-                storedName: req.file.filename,
-                mimeType: req.file.mimetype,
-                size: req.file.size,
-                description: req.body.description || '',
-                category: req.body.category || 'Other',
-                tags,
-                favorite: false,
-            });
-
-            res.status(201).json(document);
-        } catch (error) {
-            // Agar MongoDB save fail ho jaye to uploaded file
-            // ko remove karne ki koshish karte hain.
-            if (req.file) {
-                try {
-                    fs.unlinkSync(
-                        path.resolve(
-                            'uploads',
-                            req.file.filename
-                        )
-                    );
-                } catch { }
-            }
-
-            next(error);
-        }
+r.post('/', upload.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file?.buffer) {
+      return res.status(400).json({
+        message: 'A supported file is required',
+      });
     }
-);
 
-/* =========================
-   DOWNLOAD DOCUMENT
-========================= */
+    const tags = String(req.body.tags || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
 
-r.get(
-    '/:id/download',
-    async (req, res, next) => {
-        try {
-            const document = await Document.findOne({
-                _id: req.params.id,
-                owner: req.user._id,
-            });
+    const document = await Document.create({
+      owner: req.user._id,
+      originalName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+      data: req.file.buffer,
+      description: String(req.body.description || ''),
+      category: String(req.body.category || 'Other'),
+      tags,
+      favorite: false,
+    });
 
-            if (!document) {
-                return res.status(404).json({
-                    message: 'Document not found',
-                });
-            }
+    // Do not send binary data back to the browser.
+    const response = document.toObject();
+    delete response.data;
 
-            const filePath = path.resolve(
-                'uploads',
-                document.storedName
-            );
+    res.status(201).json(response);
+  } catch (error) {
+    next(error);
+  }
+});
 
-            if (!fs.existsSync(filePath)) {
-                return res.status(404).json({
-                    message: 'File not found on server',
-                });
-            }
+r.get('/:id/download', async (req, res, next) => {
+  try {
+    const document = await Document.findOne({
+      _id: req.params.id,
+      owner: req.user._id,
+    }).select('+data');
 
-            res.download(
-                filePath,
-                document.originalName
-            );
-        } catch (error) {
-            next(error);
-        }
+    if (!document) {
+      return res.status(404).json({
+        message: 'Document not found',
+      });
     }
-);
 
-/* =========================
-   GET SINGLE DOCUMENT
-========================= */
+    if (!document.data) {
+      return res.status(410).json({
+        message: 'This document has no stored file data. Please upload it again.',
+      });
+    }
+
+    res.set({
+      'Content-Type': document.mimeType,
+      'Content-Length': String(document.data.length),
+      'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(document.originalName)}`,
+      'Cache-Control': 'private, no-store',
+    });
+
+    res.send(document.data);
+  } catch (error) {
+    next(error);
+  }
+});
 
 r.get('/:id', async (req, res, next) => {
-    try {
-        const document = await Document.findOne({
-            _id: req.params.id,
-            owner: req.user._id,
-        });
+  try {
+    const document = await Document.findOne({
+      _id: req.params.id,
+      owner: req.user._id,
+    });
 
-        if (!document) {
-            return res.status(404).json({
-                message: 'Document not found',
-            });
-        }
-
-        res.json(document);
-    } catch (error) {
-        next(error);
+    if (!document) {
+      return res.status(404).json({
+        message: 'Document not found',
+      });
     }
-});
 
-/* =========================
-   UPDATE DOCUMENT
-========================= */
+    res.json(document);
+  } catch (error) {
+    next(error);
+  }
+});
 
 r.put('/:id', async (req, res, next) => {
-    try {
-        const patch = {
-            ...req.body,
-        };
+  try {
+    const patch = {
+      ...req.body,
+    };
 
-        if (typeof patch.tags === 'string') {
-            patch.tags = patch.tags
-                .split(',')
-                .map((x) => x.trim())
-                .filter(Boolean);
-        }
-
-        const document =
-            await Document.findOneAndUpdate(
-                {
-                    _id: req.params.id,
-                    owner: req.user._id,
-                },
-                patch,
-                {
-                    new: true,
-                    runValidators: true,
-                }
-            );
-
-        if (!document) {
-            return res.status(404).json({
-                message: 'Document not found',
-            });
-        }
-
-        res.json(document);
-    } catch (error) {
-        next(error);
+    if (typeof patch.tags === 'string') {
+      patch.tags = patch.tags
+        .split(',')
+        .map((x) => x.trim())
+        .filter(Boolean);
     }
+
+    // Never allow metadata updates to replace the stored file bytes.
+    delete patch.data;
+    delete patch.owner;
+    delete patch.storedName;
+    delete patch.mimeType;
+    delete patch.size;
+    delete patch.originalName;
+
+    const document = await Document.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        owner: req.user._id,
+      },
+      patch,
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    if (!document) {
+      return res.status(404).json({
+        message: 'Document not found',
+      });
+    }
+
+    res.json(document);
+  } catch (error) {
+    next(error);
+  }
 });
 
-/* =========================
-   DELETE DOCUMENT
-========================= */
-
 r.delete('/:id', async (req, res, next) => {
-    try {
-        const document = await Document.findOne({
-            _id: req.params.id,
-            owner: req.user._id,
-        });
+  try {
+    const document = await Document.findOne({
+      _id: req.params.id,
+      owner: req.user._id,
+    });
 
-        if (!document) {
-            return res.status(404).json({
-                message: 'Document not found',
-            });
-        }
-
-        try {
-            fs.unlinkSync(
-                path.resolve(
-                    'uploads',
-                    document.storedName
-                )
-            );
-        } catch { }
-
-        await Document.deleteOne({
-            _id: document._id,
-        });
-
-        res.json({
-            message: 'Document deleted',
-        });
-    } catch (error) {
-        next(error);
+    if (!document) {
+      return res.status(404).json({
+        message: 'Document not found',
+      });
     }
+
+    await Document.deleteOne({ _id: document._id });
+
+    res.json({
+      message: 'Document deleted',
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 export default r;

@@ -4,9 +4,6 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
-import path from 'path';
-import fs from 'fs';
-
 import authRoutes from './routes/auth.js';
 import planRoutes from './routes/plans.js';
 import documentRoutes from './routes/documents.js';
@@ -18,26 +15,35 @@ import notificationRoutes from './routes/notifications.js';
 import searchRoutes from './routes/search.js';
 import dashboardRoutes from './routes/dashboard.js';
 import { notFound, errorHandler } from './middleware/error.js';
+import { validateEnv } from './config/env.js';
+
+validateEnv();
 
 const app = express();
 
-const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+const configuredOrigins = String(
+    process.env.CLIENT_URL || 'http://localhost:5173'
+)
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
 
-fs.mkdirSync(path.resolve('uploads'), { recursive: true });
+const corsOptions = {
+    origin(origin, callback) {
+        // Allow non-browser requests (health checks, Vercel, curl) without an Origin header.
+        if (!origin || configuredOrigins.includes(origin)) {
+            return callback(null, true);
+        }
 
-app.use(
-    cors({
-        origin: clientUrl,
-        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization'],
-        credentials: true,
-    })
-);
-
-app.options(/.*/, cors({
-    origin: clientUrl,
+        return callback(new Error('CORS origin not allowed'));
+    },
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
-}));
+};
+
+app.use(cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 
 app.use(
     helmet({
@@ -56,8 +62,6 @@ app.use(
         legacyHeaders: false,
     })
 );
-
-app.use('/uploads', express.static(path.resolve('uploads')));
 
 app.get('/api/health', (req, res) => {
     res.json({

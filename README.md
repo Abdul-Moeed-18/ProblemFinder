@@ -1,184 +1,145 @@
-# ProblemFinder — All-in-One Productivity Platform
+# ProblemFinder — Full-Stack Productivity Platform
 
-ProblemFinder is a full-stack productivity workspace with React/Vite on the frontend and Node.js/Express on the backend.
+ProblemFinder is a React/Vite frontend with an Express/Mongoose backend and MongoDB Atlas.
 
-> **Local-first version:** for easy localhost testing, this build uses **JSON files as the database** instead of MongoDB. Your data is stored in `server/data/*.json`. MongoDB/Mongoose can be added later as a production upgrade.
+## Stack
 
-## Features
-- JWT login/register with bcrypt password hashing
-- User-isolated private data
-- Dashboard statistics and recent activity
-- PlanIt plans and progress steps
-- Digital Locker file upload/download/delete/edit using Multer
-- TeamMate projects and tasks
-- IdeaLab ideas
-- LinkSpace bookmarks
-- Global search
-- Notifications
-- Profile and password settings
-- Responsive SaaS UI
+- Frontend: React 19 + Vite
+- Backend: Node.js 24 + Express 5
+- Database: MongoDB / MongoDB Atlas
+- Authentication: JWT + bcrypt
+- File storage: MongoDB binary data (Digital Locker)
+- Deployment: two Vercel projects from the same GitHub repository
 
-## Requirements
-- Node.js 20+ recommended
+## Local setup
+
+Requirements:
+
+- Node.js 24.x
 - npm
-- VS Code
+- MongoDB Atlas (or a local MongoDB instance)
 
-**MongoDB is NOT required for this local JSON-storage version.**
-
-## 1. Extract and open
-Extract `ProblemFinder.zip`, then open the extracted `ProblemFinder` folder in VS Code.
-
-## 2. Install dependencies
-Open a terminal in the project root:
+Install everything from the repository root:
 
 ```bash
 npm install
 npm run install:all
 ```
 
-## 3. Configure environment
-Copy `.env.example` to `server/.env`.
-
-Example:
+Create `server/.env` from `server/.env.example`:
 
 ```env
-JWT_SECRET=use_a_long_random_secret_here
-PORT=5000
+MONGODB_URI=mongodb+srv://USERNAME:PASSWORD@CLUSTER.mongodb.net/problemfinder
+JWT_SECRET=replace_with_a_random_secret_at_least_32_characters
 CLIENT_URL=http://localhost:5173
-MAX_FILE_SIZE=10485760
+MAX_FILE_SIZE=4194304
+NODE_ENV=development
 ```
 
-Then copy `client/.env.example` to `client/.env`:
+Create `client/.env` from `client/.env.example`:
 
 ```env
 VITE_API_URL=http://localhost:5000/api
 ```
 
-Do not commit your real `server/.env` file.
-
-## 4. Start the application
-From the project root:
+Start both applications:
 
 ```bash
 npm run dev
 ```
 
-Or use two terminals:
+Or separately:
 
-### Terminal 1 — backend
 ```bash
 npm run server
-```
-
-### Terminal 2 — frontend
-```bash
 npm run client
 ```
 
-Open:
+Local URLs:
 
-- Frontend: http://localhost:5173
-- Backend health check: http://localhost:5000/api/health
+- Frontend: `http://localhost:5173`
+- API health: `http://localhost:5000/api/health`
 
-The health endpoint should show `"storage":"JSON"`.
+## Production architecture
 
-## 5. Demo data
-To create a ready-to-test account and demo records:
+This repository is intentionally deployed as two Vercel projects:
 
-```bash
-npm run seed
-```
+### Frontend
 
-Demo login:
-
-- Email: `demo@problemfinder.local`
-- Password: `Demo1234`
-
-The seed creates plans, projects/tasks, ideas, links and notifications. Upload your own file from Digital Locker to test file storage.
-
-## JSON database
-Local data is kept here:
+Vercel Root Directory:
 
 ```text
-server/data/
-├── users.json
-├── plans.json
-├── documents.json
-├── projects.json
-├── tasks.json
-├── ideas.json
-├── links.json
-└── notifications.json
+client
 ```
 
-These files are automatically created and updated by the backend. If you delete a JSON file, the backend recreates it as an empty array on the next request/startup.
+Environment variable:
 
-Uploaded files are stored in `server/uploads/`.
+```text
+VITE_API_URL=https://YOUR-BACKEND.vercel.app/api
+```
 
-## API overview
-Authentication:
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `GET /api/auth/me`
-- `PUT /api/auth/profile`
-- `PUT /api/auth/password`
+`client/vercel.json` provides the SPA fallback so direct visits to routes such as `/dashboard` do not return a 404.
 
-Plans:
-- `GET /api/plans`
-- `POST /api/plans`
-- `GET /api/plans/:id`
-- `PUT /api/plans/:id`
-- `DELETE /api/plans/:id`
+### Backend
 
-Documents:
-- `GET /api/documents`
-- `POST /api/documents`
-- `GET /api/documents/:id`
-- `GET /api/documents/:id/download`
-- `PUT /api/documents/:id`
-- `DELETE /api/documents/:id`
+Vercel Root Directory:
 
-Projects/tasks:
-- `GET /api/projects`
-- `POST /api/projects`
-- `GET /api/projects/:id`
-- `PUT /api/projects/:id`
-- `DELETE /api/projects/:id`
-- `POST /api/projects/:projectId/tasks`
-- `PUT /api/tasks/:id`
-- `DELETE /api/tasks/:id`
+```text
+server
+```
 
-Ideas, links and notifications have the CRUD endpoints described in the project source.
+Environment variables:
+
+```text
+MONGODB_URI=your MongoDB Atlas connection string
+JWT_SECRET=a-long-random-secret-at-least-32-characters
+CLIENT_URL=https://YOUR-FRONTEND.vercel.app
+MAX_FILE_SIZE=4194304
+NODE_ENV=production
+```
+
+After deployment:
+
+```text
+https://YOUR-BACKEND.vercel.app/api/health
+```
+
+should return:
+
+```json
+{
+  "ok": true,
+  "service": "ProblemFinder API",
+  "storage": "MongoDB"
+}
+```
+
+## Digital Locker / uploads
+
+Vercel Functions should not be used as permanent local file storage. The Digital Locker therefore stores uploaded file bytes in MongoDB.
+
+The application intentionally limits uploads to about 4 MB. Vercel currently documents a 4.5 MB maximum Function payload, so the lower application limit leaves room for multipart request overhead.
+
+For a larger-file production system, move file storage to object storage and keep only file metadata in MongoDB.
 
 ## Security
-- Passwords are hashed with bcrypt.
-- JWT authentication protects private API routes.
-- Each private record is checked against the authenticated user.
-- Document downloads require ownership.
+
+- Real environment files are not included in the deployment package.
+- `JWT_SECRET` is required and must be at least 32 characters in production.
+- Private API routes require JWT authentication.
+- User-owned records are filtered by authenticated user.
+- Document download also requires authentication and ownership.
 - Uploads are limited by size and MIME type.
-- JWT secret and other configuration values are environment variables.
-- JSON files contain local development data and should not be publicly served.
+- Binary document data is excluded from normal document-list queries.
 
-## Troubleshooting
-### Backend says MongoDB connection failed
-That should no longer happen in this version. The backend does not call `mongoose.connect()` and does not require MongoDB.
+## Important deployment rule
 
-If you still see the old MongoDB message, you are running an older extracted ZIP/folder. Download and extract the new ZIP again.
+Do not put real secrets in GitHub or inside the ZIP.
 
-### Port already in use
-Change `PORT` in `server/.env`, then change `VITE_API_URL` in `client/.env` to match the new backend port.
+Configure production secrets in the Vercel project Environment Variables instead.
 
-### Login fails
-Run:
+## Notes
 
-```bash
-npm run seed
-```
+The old `server/data/*.json` files are no longer the application's database layer. MongoDB/Mongoose is the active data layer.
 
-Then use the demo credentials above, or register a new account from the app.
-
-### Data reset
-Stop the backend and delete the desired files inside `server/data/`. They will be recreated as empty JSON arrays. Uploaded files can be removed from `server/uploads/`.
-
-## Production note
-JSON storage is intended for this first localhost/testing version. For a real multi-user production deployment, replace the JSON data layer with MongoDB/Mongoose or another persistent database and use cloud/object storage for uploaded files.
+The old local `server/uploads/` approach is no longer used for persistent document storage.

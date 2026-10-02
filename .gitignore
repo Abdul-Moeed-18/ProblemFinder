@@ -1,8 +1,11 @@
 node_modules/
 .env
+.env.*
+!.env.example
 *.log
 .DS_Store
 dist/
 client/.vite/
 server/uploads/*
 !server/uploads/.gitkeep
+.vercel/

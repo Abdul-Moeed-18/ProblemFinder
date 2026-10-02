@@ -33,9 +33,9 @@ async function startServer() {
     );
   }
 
-  app.listen(port, '127.0.0.1', () => {
+  app.listen(port, '0.0.0.0', () => {
     console.log(
-      `ProblemFinder API RUNNING: http://127.0.0.1:${port}`
+      `ProblemFinder API RUNNING: http://localhost:${port}`
     );
   });
 }

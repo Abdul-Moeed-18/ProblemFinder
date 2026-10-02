@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'development-secret-change-me';
+const JWT_SECRET = process.env.JWT_SECRET;
 
 const publicUser = (user) => ({
   _id: user._id,

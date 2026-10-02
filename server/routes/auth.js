@@ -5,7 +5,7 @@ import User from '../models/User.js';
 import { auth } from '../middleware/auth.js';
 
 const r = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'development-secret-change-me';
+const JWT_SECRET = process.env.JWT_SECRET;
 const normalize = (email) => String(email || '').trim().toLowerCase();
 
 const publicUser = (user) => ({
