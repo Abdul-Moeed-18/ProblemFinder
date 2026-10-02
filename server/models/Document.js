@@ -16,11 +16,6 @@ const documentSchema = new mongoose.Schema(
 
         storedName: {
             type: String,
-            default: '',
-        },
-
-        data: {
-            type: Buffer,
             required: true,
         },
 

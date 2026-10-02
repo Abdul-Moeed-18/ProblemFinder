@@ -4,6 +4,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
+import path from 'path';
+import fs from 'fs';
 
 import authRoutes from './routes/auth.js';
 import planRoutes from './routes/plans.js';
@@ -21,6 +23,7 @@ const app = express();
 
 const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
 
+fs.mkdirSync(path.resolve('uploads'), { recursive: true });
 
 app.use(
     cors({
@@ -54,6 +57,7 @@ app.use(
     })
 );
 
+app.use('/uploads', express.static(path.resolve('uploads')));
 
 app.get('/api/health', (req, res) => {
     res.json({
